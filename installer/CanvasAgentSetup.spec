@@ -6,7 +6,7 @@ installer_dir = Path(SPECPATH)
 project_root = installer_dir.parent
 dist_dir = project_root / "dist"
 wheels = sorted(dist_dir.glob("*.whl"))
-datas = [(str(wheel), ".") for wheel in wheels]
+datas = [(str(wheels[-1]), ".")] if wheels else []
 
 a = Analysis(
     [str(installer_dir / "gui.py")],
