@@ -1,42 +1,40 @@
 # Orange3 Canvas Agent Tutorial
 
-This add-on creates a new Orange widget named **Canvas Agent**. It asks an agent backend for structured canvas actions, applies those actions to the live Orange workflow, and keeps an AI commit checkpoint so you can either keep or revert the changes.
+This tutorial shows where to find the **Canvas Agent** widget in Orange, how to
+run it for the first time, and how to repair the most common "installed but not
+visible" problem.
 
-## Install For Existing Local Development
+## Where To Find The Widget
 
-From this project directory:
+After a successful install, open Orange and look at the left widget toolbox.
+The add-on creates a category named **Canvas Agent**. Expand that category and
+drag the **Canvas Agent** widget onto your workflow canvas.
 
-```powershell
-python -m pip install -e .
-```
+If you do not see the category, go straight to
+[Repair: Installed But Not Visible](#repair-installed-but-not-visible).
 
-Then launch Orange:
+## Beginner Install Path
 
-```powershell
-python -m Orange.canvas --force-discovery
-```
-
-## Install For Official Orange Users
-
-1. Download `CanvasAgentSetup.exe`.
+1. Download `CanvasAgentSetup.exe` from the GitHub releases page.
 2. Double-click it.
-3. Select your Orange installation.
-4. Click **Install**.
-5. Let the installer open Orange.
-6. Find **Canvas Agent** in the widget toolbox.
+3. Let the installer detect Orange, or click **Choose Folder...** if needed.
+4. Click **Install / Repair**.
+5. Click **Run Verification** on the Verify page.
+6. On the Finish page, click **Open Orange**.
+7. In Orange, look for the **Canvas Agent** category in the left toolbox.
 
-No coding or PowerShell is required for this path.
+This path is designed for normal Orange users and does not require PowerShell.
 
-## Install For Experienced Coders
+## Coder Install Path
 
-From PyPI:
+### From PyPI
 
 ```powershell
 python -m pip install Orange3-CanvasAgent
 python -m Orange.canvas --force-discovery
 ```
 
-From GitHub:
+### From A Local Checkout
 
 ```powershell
 git clone https://github.com/pantagram1031/orange3-canvasagent.git
@@ -46,66 +44,59 @@ python -B -m unittest discover -v
 python -m Orange.canvas --force-discovery
 ```
 
-## Use The Widget
+## First Run Inside Orange
 
-1. Open Orange.
-2. Find the **Canvas Agent** category in the widget toolbox.
-3. Drag **Canvas Agent** onto the canvas.
-4. Open the **Setup** tab.
-5. Click **Check Setup**.
-6. Click **Sign in** if Codex is not already authenticated.
-7. Click **Test Agent**.
-8. Open the **Chat** tab.
-9. Type a canvas request, for example:
+1. Drag **Canvas Agent** onto the canvas.
+2. Open the **Setup** tab.
+3. Click **Check Setup**.
+4. If prompted, click **Sign in** to complete the Codex CLI login flow.
+5. Click **Test Agent**.
+6. Open the **Chat** tab.
+7. Enter a request such as:
 
 ```text
 Add a File widget and a Data Table widget, then connect them.
 ```
 
-10. Click **Send**.
-11. Open the **Preview** tab.
-12. Click **Keep Changes** to accept the AI commit, or **Revert AI Commit** to restore the previous canvas snapshot.
+8. Click **Send**.
+9. Review the output on the **Preview** tab.
+10. Use **Keep Changes** to accept the plan or **Revert AI Commit** to restore
+    the previous canvas state.
+
+## Repair: Installed But Not Visible
+
+Use these steps in order if the installer said Canvas Agent was installed but
+you still cannot find it in Orange.
+
+1. Close every Orange window.
+2. Open Orange again normally.
+3. Check the left toolbox carefully for a category named **Canvas Agent**.
+4. If you installed with `CanvasAgentSetup.exe`, rerun the installer and finish
+   the install again. The installer launches Orange with forced widget
+   discovery, which repairs many first-run registration issues.
+5. If you installed from PyPI or source, run the discovery command once:
+
+```powershell
+python -m Orange.canvas --force-discovery
+```
+
+6. Reopen Orange and check again.
+7. If the category is still missing, confirm you installed into the same Python
+   environment used by your Orange desktop app.
+8. If the widget appears but setup checks fail, open the **Diagnostics** tab in
+   the widget and copy the report before filing an issue.
 
 ## The Four Tabs
 
-- **Setup:** Codex readiness, Orange canvas readiness, sign-in flow, and first-run steps.
-- **Chat:** Conversation transcript, command composer, and status log.
-- **Preview:** Structured action preview, warnings, and keep/revert controls.
-- **Diagnostics:** Codex and Orange discovery report for troubleshooting.
+- **Setup:** Checks Codex CLI availability, sign-in state, and Orange readiness.
+- **Chat:** Sends natural-language workflow requests.
+- **Preview:** Shows the structured action plan and the keep/revert controls.
+- **Diagnostics:** Shows the discovery and readiness report for support cases.
 
-## How It Works
+## What The Agent Changes
 
-The widget never executes arbitrary Python returned by a model. Instead, the backend must return JSON matching the `CanvasPlan` schema:
-
-```json
-{
-  "summary": "Create a simple data loading workflow",
-  "actions": [
-    {
-      "type": "add_widget",
-      "node_id": "file",
-      "qualified_name": "Orange.widgets.data.owfile.OWFile",
-      "title": "File",
-      "position": [10, 20]
-    },
-    {
-      "type": "add_widget",
-      "node_id": "table",
-      "qualified_name": "Orange.widgets.data.owtable.OWDataTable",
-      "title": "Data Table",
-      "position": [220, 20]
-    },
-    {
-      "type": "connect",
-      "source_node_id": "file",
-      "sink_node_id": "table"
-    }
-  ],
-  "warnings": []
-}
-```
-
-Supported v1 actions are:
+The widget does not execute arbitrary Python from a model response. It accepts a
+structured plan and applies only supported canvas actions such as:
 
 - `add_widget`
 - `connect`
@@ -113,35 +104,13 @@ Supported v1 actions are:
 - `move_node`
 - `annotate`
 
-Before applying a plan, the add-on serializes the current Orange scheme into an in-memory checkpoint. If an action fails, the checkpoint is restored automatically. If the actions succeed, the UI keeps the checkpoint until you choose **Keep Changes** or **Revert AI Commit**.
+Before applying a plan, the add-on stores an in-memory checkpoint of the
+current scheme. If anything fails, the checkpoint is restored automatically.
 
-## Verify The Add-On
-
-Run:
+## Quick Verification For Coders
 
 ```powershell
 $env:QT_QPA_PLATFORM='offscreen'
 python -B -m unittest discover -v
+python -m Orange.canvas --force-discovery
 ```
-
-Expected result:
-
-```text
-Ran 21 tests
-OK
-```
-
-You can also verify Orange discovery:
-
-```powershell
-python -B -u -m Orange.canvas --help
-```
-
-If Orange starts and the tests pass, the package is installed correctly.
-
-## Current Limits
-
-- The implemented backend is **Codex CLI**.
-- The LiteLLM/OpenAI/Anthropic/Ollama adapter is reserved for a later version.
-- The widget changes the canvas through whitelisted structured actions only.
-- Real model quality depends on whether Codex returns valid widget qualified names that exist in your Orange installation.

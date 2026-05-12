@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -31,6 +32,81 @@ PYTHON_CANDIDATES = (
     "python/python.exe",
     "Orange/python.exe",
 )
+
+SMOKE_CHECK_SCRIPT = textwrap.dedent(
+    """
+    import importlib
+    import json
+    import pkgutil
+    import sys
+    import warnings
+    from importlib.metadata import entry_points
+
+    from orangecanvas.registry import WidgetRegistry
+    from orangecanvas.registry.discovery import WidgetDiscovery
+
+    CATEGORY_NAME = "Canvas Agent"
+    WIDGET_NAME = "Canvas Agent"
+    CATEGORY_MODULE = "orangecontrib.canvasagent.widgets"
+    WIDGET_MODULE = "orangecontrib.canvasagent.widgets.OWCanvasAgent"
+
+    def fail(message, diagnostics):
+        payload = {"message": message, **diagnostics}
+        print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
+        raise SystemExit(1)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        category_module = importlib.import_module(CATEGORY_MODULE)
+        widget_module = importlib.import_module(WIDGET_MODULE)
+        registry = WidgetRegistry()
+        WidgetDiscovery(registry).run(entry_points(group="orange.widgets"))
+
+    categories = list(registry.categories())
+    diagnostics = {
+        "categories": [getattr(category, "name", "<unnamed>") for category in categories],
+        "entry_points": sorted(ep.name for ep in entry_points(group="orange.widgets")),
+    }
+
+    category = next((item for item in categories if getattr(item, "name", None) == CATEGORY_NAME), None)
+    if category is None:
+        fail("Canvas Agent category missing after WidgetDiscovery.", diagnostics)
+
+    category_icon = getattr(category_module, "ICON", "")
+    diagnostics["category_icon"] = category_icon
+    if not category_icon or not pkgutil.get_data(CATEGORY_MODULE, category_icon):
+        fail("Canvas Agent category icon resource could not be loaded.", diagnostics)
+
+    widgets = list(registry.widgets(category))
+    diagnostics["category_widgets"] = [getattr(widget, "name", "<unnamed>") for widget in widgets]
+
+    widget = next((item for item in widgets if getattr(item, "name", None) == WIDGET_NAME), None)
+    if widget is None:
+        fail("Canvas Agent widget missing from Canvas Agent category.", diagnostics)
+
+    diagnostics["qualified_name"] = getattr(widget, "qualified_name", "")
+    widget_icon = getattr(widget_module, "ICON", "")
+    diagnostics["widget_icon"] = widget_icon
+    if not widget_icon or not pkgutil.get_data(CATEGORY_MODULE, widget_icon):
+        fail("Canvas Agent widget icon resource could not be loaded.", diagnostics)
+
+    print(
+        json.dumps(
+            {
+                "message": "Canvas Agent category, widget, and icon discovery passed.",
+                **diagnostics,
+            },
+            sort_keys=True,
+        )
+    )
+    """
+).strip()
+
+
+def subprocess_creationflags() -> int:
+    if sys.platform == "win32":
+        return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    return 0
 
 
 def find_orange_python(folder: str | Path) -> Path | None:
@@ -62,6 +138,7 @@ def validate_orange_folder(
             capture_output=True,
             text=True,
             timeout=60,
+            creationflags=subprocess_creationflags(),
         )
         if getattr(result, "returncode", 1) != 0:
             message = (getattr(result, "stderr", "") or getattr(result, "stdout", "")).strip()
@@ -164,6 +241,7 @@ def resolve_windows_shortcut(shortcut: str | Path) -> Path | None:
             capture_output=True,
             text=True,
             timeout=10,
+            creationflags=subprocess_creationflags(),
         )
     except Exception:
         return None
@@ -190,10 +268,20 @@ def install_wheel(
     runner=subprocess.run,
 ) -> DetectionResult:
     result = runner(
-        [str(python_executable), "-m", "pip", "install", "--upgrade", str(wheel_path)],
+        [
+            str(python_executable),
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--force-reinstall",
+            "--no-deps",
+            str(wheel_path),
+        ],
         capture_output=True,
         text=True,
         timeout=300,
+        creationflags=subprocess_creationflags(),
     )
     if getattr(result, "returncode", 1) != 0:
         return DetectionResult(False, (getattr(result, "stderr", "") or "Wheel install failed.").strip())
@@ -205,20 +293,21 @@ def smoke_check(python_executable: str | Path, *, runner=subprocess.run) -> Dete
         [
             str(python_executable),
             "-c",
-            (
-                "import orangecontrib.canvasagent; "
-                "from importlib.metadata import entry_points; "
-                "assert any(ep.name == 'Canvas Agent' for ep in entry_points(group='orange.widgets')); "
-                "print('ok')"
-            ),
+            SMOKE_CHECK_SCRIPT,
         ],
         capture_output=True,
         text=True,
         timeout=120,
+        creationflags=subprocess_creationflags(),
     )
     if getattr(result, "returncode", 1) != 0:
-        return DetectionResult(False, (getattr(result, "stderr", "") or "Smoke check failed.").strip())
-    return DetectionResult(True, "Canvas Agent import and entry point checks passed.", Path(python_executable))
+        message = (getattr(result, "stderr", "") or getattr(result, "stdout", "") or "Smoke check failed.").strip()
+        return DetectionResult(False, message, Path(python_executable))
+    details = getattr(result, "stdout", "").strip()
+    message = "Canvas Agent category, widget, and icon discovery passed."
+    if details:
+        message = f"{message} {details}"
+    return DetectionResult(True, message, Path(python_executable))
 
 
 def _append_install(
