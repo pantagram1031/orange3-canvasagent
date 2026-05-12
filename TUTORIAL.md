@@ -2,7 +2,7 @@
 
 This add-on creates a new Orange widget named **Canvas Agent**. It asks an agent backend for structured canvas actions, applies those actions to the live Orange workflow, and keeps an AI commit checkpoint so you can either keep or revert the changes.
 
-## Install
+## Install For Existing Local Development
 
 From this project directory:
 
@@ -10,36 +10,68 @@ From this project directory:
 python -m pip install -e .
 ```
 
-For future LiteLLM provider routing:
-
-```powershell
-python -m pip install -e ".[llm]"
-```
-
-## Launch Orange
+Then launch Orange:
 
 ```powershell
 python -m Orange.canvas --force-discovery
 ```
 
-The `--force-discovery` flag makes Orange rescan installed widgets. After the first launch, it is usually not needed.
+## Install For Official Orange Users
+
+1. Download `CanvasAgentSetup.exe`.
+2. Double-click it.
+3. Select your Orange installation.
+4. Click **Install**.
+5. Let the installer open Orange.
+6. Find **Canvas Agent** in the widget toolbox.
+
+No coding or PowerShell is required for this path.
+
+## Install For Experienced Coders
+
+From PyPI:
+
+```powershell
+python -m pip install Orange3-CanvasAgent
+python -m Orange.canvas --force-discovery
+```
+
+From GitHub:
+
+```powershell
+git clone https://github.com/pantagram1031/orange3-canvasagent.git
+cd orange3-canvasagent
+python -m pip install -e ".[dev]"
+python -B -m unittest discover -v
+python -m Orange.canvas --force-discovery
+```
 
 ## Use The Widget
 
 1. Open Orange.
 2. Find the **Canvas Agent** category in the widget toolbox.
 3. Drag **Canvas Agent** onto the canvas.
-4. Keep **Codex CLI** selected in the backend dropdown.
-5. Click **Sign in** if Codex is not already authenticated.
-6. Type a canvas request, for example:
+4. Open the **Setup** tab.
+5. Click **Check Setup**.
+6. Click **Sign in** if Codex is not already authenticated.
+7. Click **Test Agent**.
+8. Open the **Chat** tab.
+9. Type a canvas request, for example:
 
 ```text
 Add a File widget and a Data Table widget, then connect them.
 ```
 
-7. Click **Send**.
-8. Review the action preview.
-9. Click **Keep Changes** to accept the AI commit, or **Revert AI Commit** to restore the previous canvas snapshot.
+10. Click **Send**.
+11. Open the **Preview** tab.
+12. Click **Keep Changes** to accept the AI commit, or **Revert AI Commit** to restore the previous canvas snapshot.
+
+## The Four Tabs
+
+- **Setup:** Codex readiness, Orange canvas readiness, sign-in flow, and first-run steps.
+- **Chat:** Conversation transcript, command composer, and status log.
+- **Preview:** Structured action preview, warnings, and keep/revert controls.
+- **Diagnostics:** Codex and Orange discovery report for troubleshooting.
 
 ## How It Works
 
@@ -95,7 +127,7 @@ python -B -m unittest discover -v
 Expected result:
 
 ```text
-Ran 14 tests
+Ran 21 tests
 OK
 ```
 
@@ -113,4 +145,3 @@ If Orange starts and the tests pass, the package is installed correctly.
 - The LiteLLM/OpenAI/Anthropic/Ollama adapter is reserved for a later version.
 - The widget changes the canvas through whitelisted structured actions only.
 - Real model quality depends on whether Codex returns valid widget qualified names that exist in your Orange installation.
-

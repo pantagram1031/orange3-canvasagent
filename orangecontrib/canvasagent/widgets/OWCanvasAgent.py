@@ -10,6 +10,7 @@ from orangecontrib.canvasagent.canvas import (
 from orangecontrib.canvasagent.codex_backend import CodexCliBackend
 from orangecontrib.canvasagent.commit import AiCommit, capture_scheme_snapshot, restore_scheme_snapshot
 from orangecontrib.canvasagent.schema import CANVAS_PLAN_JSON_SCHEMA, CanvasPlan
+from orangecontrib.canvasagent.setup_status import check_codex_status, diagnostic_report
 
 NAME = "Canvas Agent"
 DESCRIPTION = "Multi-LLM real-time canvas agent with reversible AI commits."
@@ -21,9 +22,12 @@ try:
     from Orange.widgets.widget import OWWidget
     from AnyQt.QtCore import QObject, QThread, Signal, Slot
     from AnyQt.QtWidgets import (
+        QApplication,
+        QCheckBox,
         QComboBox,
         QLabel,
         QPushButton,
+        QTabWidget,
         QTextEdit,
         QVBoxLayout,
         QWidget,
@@ -95,6 +99,8 @@ class OWCanvasAgent(OWWidget):
         self._pending_prompt = ""
         self._worker_thread = None
         self._worker = None
+        self._backend_ready = False
+        self._canvas_ready = False
 
         if not ORANGE_AVAILABLE:
             return
@@ -116,7 +122,7 @@ class OWCanvasAgent(OWWidget):
         self.auth_status = QLabel("")
 
         self.prompt_input = QTextEdit()
-        self.prompt_input.setMaximumHeight(80)
+        self.prompt_input.setMaximumHeight(96)
         self.prompt_input.setPlaceholderText("Tell the agent what to change on the canvas...")
 
         self.send_button = QPushButton("Send")
@@ -129,7 +135,7 @@ class OWCanvasAgent(OWWidget):
 
         self.status_log = QTextEdit()
         self.status_log.setReadOnly(True)
-        self.status_log.setMaximumHeight(150)
+        self.status_log.setMaximumHeight(170)
 
         for widget in [
             QLabel("Backend"),
@@ -138,19 +144,10 @@ class OWCanvasAgent(OWWidget):
             self.model_selector,
             self.auth_button,
             self.auth_status,
-            QLabel("Command"),
-            self.prompt_input,
-            self.send_button,
             self.keep_button,
             self.revert_button,
-            QLabel("Status"),
-            self.status_log,
         ]:
             self.controlArea.layout().addWidget(widget)
-
-        main = QWidget()
-        main_layout = QVBoxLayout()
-        main.setLayout(main_layout)
 
         self.transcript = QTextEdit()
         self.transcript.setReadOnly(True)
@@ -159,14 +156,80 @@ class OWCanvasAgent(OWWidget):
         self.error_panel = QTextEdit()
         self.error_panel.setReadOnly(True)
         self.error_panel.setMaximumHeight(120)
+        self.raw_json_toggle = QCheckBox("Show raw JSON")
+        self.diagnostics_text = QTextEdit()
+        self.diagnostics_text.setReadOnly(True)
+        self.copy_diagnostics_button = QPushButton("Copy Diagnostic Report")
+        self.copy_diagnostics_button.clicked.connect(self._copy_diagnostics)
+        self.refresh_setup_button = QPushButton("Check Setup")
+        self.refresh_setup_button.clicked.connect(self._refresh_auth_status)
+        self.test_agent_button = QPushButton("Test Agent")
+        self.test_agent_button.clicked.connect(self._test_agent_readiness)
 
-        main_layout.addWidget(QLabel("Conversation"))
-        main_layout.addWidget(self.transcript)
-        main_layout.addWidget(QLabel("AI Commit Preview"))
-        main_layout.addWidget(self.action_preview)
-        main_layout.addWidget(QLabel("Errors"))
-        main_layout.addWidget(self.error_panel)
-        self.mainArea.layout().addWidget(main)
+        self.tabs = QTabWidget()
+        self.setup_step_labels = [
+            QLabel("1. Check Codex"),
+            QLabel("2. Sign in"),
+            QLabel("3. Test agent"),
+            QLabel("4. Start"),
+        ]
+        self.codex_status_label = QLabel("")
+        self.canvas_status_label = QLabel("")
+        self.discovery_status_label = QLabel("")
+
+        self.tabs.addTab(self._setup_tab(), "Setup")
+        self.tabs.addTab(self._chat_tab(), "Chat")
+        self.tabs.addTab(self._preview_tab(), "Preview")
+        self.tabs.addTab(self._diagnostics_tab(), "Diagnostics")
+        self.mainArea.layout().addWidget(self.tabs)
+
+    def _setup_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout()
+        tab.setLayout(layout)
+        layout.addWidget(QLabel("Canvas Agent Setup"))
+        for label in self.setup_step_labels:
+            layout.addWidget(label)
+        layout.addWidget(self.codex_status_label)
+        layout.addWidget(self.canvas_status_label)
+        layout.addWidget(self.discovery_status_label)
+        layout.addWidget(self.refresh_setup_button)
+        layout.addWidget(self.test_agent_button)
+        layout.addStretch(1)
+        return tab
+
+    def _chat_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout()
+        tab.setLayout(layout)
+        layout.addWidget(QLabel("Conversation"))
+        layout.addWidget(self.transcript)
+        layout.addWidget(QLabel("Command"))
+        layout.addWidget(self.prompt_input)
+        layout.addWidget(self.send_button)
+        layout.addWidget(QLabel("Status"))
+        layout.addWidget(self.status_log)
+        return tab
+
+    def _preview_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout()
+        tab.setLayout(layout)
+        layout.addWidget(QLabel("AI Commit Preview"))
+        layout.addWidget(self.action_preview)
+        layout.addWidget(self.raw_json_toggle)
+        layout.addWidget(self.keep_button)
+        layout.addWidget(self.revert_button)
+        return tab
+
+    def _diagnostics_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout()
+        tab.setLayout(layout)
+        layout.addWidget(QLabel("Diagnostics"))
+        layout.addWidget(self.diagnostics_text)
+        layout.addWidget(self.copy_diagnostics_button)
+        return tab
 
     def _current_backend(self):
         name = self.backend_selector.currentText()
@@ -181,8 +244,18 @@ class OWCanvasAgent(OWWidget):
             status = self._current_backend().is_authenticated()
         except Exception as exc:
             status = AuthStatus(False, str(exc))
+        codex_status = check_codex_status()
+        self._backend_ready = status.authenticated
+        self._canvas_ready = self._has_scheme()
         self.auth_status.setText(status.message)
         self.auth_button.setText("Reconnect" if status.authenticated else "Sign in")
+        self.codex_status_label.setText(f"Codex: {codex_status.state} - {codex_status.message}")
+        self.canvas_status_label.setText(
+            "Canvas: ready" if self._canvas_ready else "Canvas: open this widget on an Orange canvas"
+        )
+        self.discovery_status_label.setText("Widget discovery: registered")
+        self.diagnostics_text.setPlainText(diagnostic_report())
+        self._update_send_enabled()
 
     def _login(self) -> None:
         try:
@@ -249,6 +322,7 @@ class OWCanvasAgent(OWWidget):
 
         self.prompt_input.clear()
         self.send_button.setEnabled(True)
+        self._update_send_enabled()
         self._set_commit_controls(True)
         self._append_transcript(f"Agent: {plan.summary}")
         self.action_preview.setPlainText(json.dumps(plan.to_dict(), indent=2))
@@ -259,7 +333,7 @@ class OWCanvasAgent(OWWidget):
 
     @Slot(str)
     def _on_agent_error(self, message: str) -> None:
-        self.send_button.setEnabled(True)
+        self._update_send_enabled()
         self._append_error(message)
 
     def _keep_commit(self) -> None:
@@ -283,6 +357,16 @@ class OWCanvasAgent(OWWidget):
     def _set_commit_controls(self, enabled: bool) -> None:
         self.keep_button.setEnabled(enabled)
         self.revert_button.setEnabled(enabled)
+
+    def _update_send_enabled(self) -> None:
+        self.send_button.setEnabled(bool(self._backend_ready and self._canvas_ready))
+
+    def _has_scheme(self) -> bool:
+        try:
+            self._scheme()
+            return True
+        except Exception:
+            return False
 
     def _scheme(self):
         try:
@@ -324,3 +408,14 @@ class OWCanvasAgent(OWWidget):
 
     def _append_transcript(self, text: str) -> None:
         self.transcript.append(text)
+
+    def _copy_diagnostics(self) -> None:
+        QApplication.clipboard().setText(self.diagnostics_text.toPlainText())
+        self._append_status("Diagnostic report copied.")
+
+    def _test_agent_readiness(self) -> None:
+        self._refresh_auth_status()
+        if self._backend_ready and self._canvas_ready:
+            self._append_status("Agent is ready.")
+        else:
+            self._append_status("Agent is not ready yet. Check setup details.")

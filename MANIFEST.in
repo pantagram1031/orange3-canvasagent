@@ -1,0 +1,10 @@
+include LICENSE
+include README.md
+include TUTORIAL.md
+include pyproject.toml
+recursive-include docs *.md
+recursive-include installer *.py *.spec
+recursive-include scripts *.ps1
+recursive-include tests *.py
+recursive-include orangecontrib *.py *.svg
+
