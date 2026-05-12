@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "Orange3-CanvasAgent"
-version = "0.1.0"
+version = "0.1.1"
 description = "An Orange3 canvas agent widget with reversible AI commits."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,6 +15,7 @@ authors = [
 keywords = ["orange3", "codex", "llm", "canvas", "agent", "data-mining"]
 dependencies = [
     "Orange3>=3.40,<3.41",
+    "PyQt5>=5.15,<6",
     "keyring>=25",
 ]
 classifiers = [

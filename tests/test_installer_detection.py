@@ -31,9 +31,9 @@ class InstallerDetectionTests(unittest.TestCase):
             self.assertEqual(
                 [(install.source, install.root) for install in installs],
                 [
-                    ("registry", registry_root),
-                    ("shortcut", shortcut_root),
-                    ("common", common_root),
+                    ("registry", registry_root.resolve()),
+                    ("shortcut", shortcut_root.resolve()),
+                    ("common", common_root.resolve()),
                 ],
             )
 
@@ -56,4 +56,3 @@ class InstallerDetectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
